@@ -6,6 +6,7 @@
 
 const pfc::string8 ANSYNC_NAME = "Android Sync";
 
+void androidsync_do_sync_pl_items( t_size );
 void androidsync_do_sync_pl( t_size );
 void androidsync_do_sync();
 
@@ -401,9 +402,44 @@ static preferences_page_factory_t<preferences_page_androidsync>
 
 /* = Synchronization = */
 
-void androidsync_do_sync_pl( t_size playlist_id_in ) {
+// Figure out the base name of the given item. 
+void androidsync_basename( pfc::string8 &path_in, pfc::string8 &basename_out ) {
+   const char* item_basename_start;
+
+   // Setup.
+   basename_out.reset();
+
+   // Base name is the file name minus the path. Maybe there's a better way to 
+   // do this?
+   item_basename_start = strrchr( path_in, '\\' );
+   basename_out << 
+      (item_basename_start ? item_basename_start + 1 : path_in);
+}
+
+// Figure out the destination/target path for the given item. 
+void androidsync_remote( pfc::string8 &path_in, pfc::string8 &remote_out ) {
+   pfc::string8 item_basename;
+   
+   // Setup.
+   androidsync_basename( path_in, item_basename );
+   remote_out.reset();
+
+   // Remote name is the target path plus the base name.
+   remote_out << cfg_targetpath;
+   if( !cfg_targetpath.ends_with( '\\' ) ) {
+      // There's no trailing backslash, so add one.
+      remote_out.add_char( '\\' );
+   }
+   remote_out << item_basename;
+}
+
+// Copy all of the files on a given playlist to the target directory as 
+// specified in the configuration options.
+void androidsync_do_sync_pl_items( t_size playlist_id_in ) {
    pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
-   pfc::string8 item_iter;
+   pfc::string8 item_iter,
+      item_iter_remote, // Remote path to post-copy item.
+      item_iter_basename;
    t_size item_iter_id; // Index of the currently processing plist item.
    SHFILEOPSTRUCT op;
    int i, // General purpose iterator.
@@ -427,20 +463,32 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
          playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
          item_iter 
       );
-      
-      src8 << item_iter;
-      src8.add_char( '|' );
-      src_len += item_iter.get_length() + 1; // +1 for the NULL.
+
+      // Figure out the base name and remote name of the current item. 
+      androidsync_basename( item_iter, item_iter_basename );
+      androidsync_remote( item_iter, item_iter_remote );
+
+      // Only add the file to the list if it doesn't already exist at the 
+      // destination.
+      // TODO: Compare source and destination based on size or modification 
+      //       times?
+      if( 0xFFFFFFFF == GetFileAttributes( 
+         pfc::stringcvt::string_wide_from_utf8( item_iter_remote )
+      ) ) {
+         src8 << item_iter;
+         src8.add_char( '|' );
+         src_len += item_iter.get_length() + 1; // +1 for the NULL.
+      }
    }
    
-   // Copy over the target path.
+   // Convert the source and destination paths into char arrays.
    t_src = new TCHAR[src_len + 1]; // +1 for the second NULL.
    t_dst = new TCHAR[dst_len];
    memset( t_src, NULL, (src_len + 1) * sizeof( TCHAR ) );
    memset( t_dst, NULL, dst_len * sizeof( TCHAR ) );
    pfc::stringcvt::convert_utf8_to_wide( t_src, src_len, src8, src_len );
-   pfc::stringcvt::convert_utf8_to_wide( 
-      t_dst, dst_len - 1, cfg_targetpath, cfg_targetpath.length() 
+   pfc::stringcvt::convert_utf8_to_wide(
+      t_dst, dst_len - 1, cfg_targetpath, cfg_targetpath.length()
    );
 
    // Convert the '|' deliminators to NULLs.
@@ -458,18 +506,71 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
 	op.fFlags = FOF_NOCONFIRMMKDIR;
    op.hwnd = core_api::get_main_window();
 
+   // Perform the actual copy.
    copy_result = SHFileOperation( &op );
-
    if( copy_result ) {
       popup_message::g_show( "Copy to device failed.", ANSYNC_NAME );
    }
 
+   // Cleanup
    delete t_src;
    delete t_dst;
 }
 
-void androidsync_do_sync() {
+// Write the specified playlist to the target directory set in the configuration
+// options, modified to point to files in the same directory.
+void androidsync_do_sync_pl( t_size playlist_id_in ) {
+   pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
+   pfc::string8 item_iter,
+      playlist_name,
+      playlist_path_remote,
+      item_iter_remote, // Remote path to post-copy item.
+      item_iter_basename;
+   t_size item_iter_id; // Index of the currently processing plist item.
+   FILE* playlist;
 
+   // Figure out the remote name to write the playlist to.
+   static_api_ptr_t<playlist_manager>()->playlist_get_name(
+      playlist_id_in, playlist_name
+   );
+   playlist_name << ".m3u";
+   androidsync_remote( playlist_name, playlist_path_remote );
+
+   // Open the file.
+   playlist = fopen( playlist_path_remote, "w" );
+   
+   // Build the source path list.
+   static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
+      playlist_id_in, playlist_items
+   );
+   for( 
+      item_iter_id = 0;
+      item_iter_id < playlist_items.get_count();
+      item_iter_id++
+   ) {
+      filesystem::g_get_display_path( 
+         playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
+         item_iter
+      );
+
+      // Figure out the base name and remote name of the current item. 
+      androidsync_basename( item_iter, item_iter_basename );
+
+      // Write the line for the current item in the output playlist.
+      fwrite(
+         item_iter_basename,
+         sizeof( char ),
+         item_iter_basename.get_length(),
+         playlist
+      );
+      fwrite( "\n", sizeof( char ), 1, playlist );
+   }
+
+   // Cleanup.
+   fclose( playlist );
+}
+
+void androidsync_do_sync() {
    t_size plist_id_iter, // Iterator for all playlist IDs.
        selected_id_iter; // Iterator for selected playlist IDs.
    pfc::string8 plist_iter,
@@ -494,8 +595,8 @@ void androidsync_do_sync() {
          ) {
             // This playlist is on the list of selected playlists.
             androidsync_do_sync_pl( plist_id_iter );
-            //break;
-            return;
+            androidsync_do_sync_pl_items( plist_id_iter );
+            break;
          }
       }
    }
