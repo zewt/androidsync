@@ -4,6 +4,8 @@
 
 // = Declarations =
 
+const pfc::string8 ANSYNC_NAME = "Android Sync";
+
 void androidsync_do_sync_pl( t_size );
 void androidsync_do_sync();
 
@@ -377,7 +379,7 @@ private:
 class preferences_page_androidsync : 
 public preferences_page_impl<CAndroidSyncPrefs> {
 public:
-	const char * get_name() { return "Android Sync"; }
+   const char * get_name() { return ANSYNC_NAME; }
 
 	GUID get_guid() {
 		static const GUID guid = {
@@ -402,12 +404,26 @@ static preferences_page_factory_t<preferences_page_androidsync>
 void androidsync_do_sync_pl( t_size playlist_id_in ) {
    pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
    t_size item_iter_id; // Index of the currently processing plist item.
-   pfc::string_formatter cmd_files; // File list to pass to SHFileCopy.
-   
+   SHFILEOPSTRUCT op;
+   int copy_result,
+      src_len = 1,
+      dst_len = cfg_targetpath.get_length() + 1;
+   TCHAR* t_src,
+      * t_dst;
+
+   // We would like to be very C++ and use the "new" statement, but we will 
+   // need realloc later to build these stupid SHFileOperation-complient
+   // strings.
+   t_src = (TCHAR*)calloc( src_len, sizeof( TCHAR ) );
+   t_dst = (TCHAR*)calloc( dst_len, sizeof( TCHAR ) );
+
+   // Copy over the target path.
+   pfc::stringcvt::convert_utf8_to_wide( t_dst, dst_len, cfg_targetpath, -1 );
+
+   // Build the list of source files.
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
       playlist_id_in, playlist_items
    );
-   
    for( 
       item_iter_id = 0;
       item_iter_id < playlist_items.get_count();
@@ -418,6 +434,25 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
       cmd_files.add_char( '\0' );
    }
    cmd_files.add_char( '\0' );
+   cmd_files.add_char( '\0' );
+
+   cmd_targetpath.add_char( '\0' );
+   cmd_targetpath.add_char( '\0' );
+
+   
+   // Build the file copy instruction structure.
+   memset( &op, NULL, sizeof( op ) );
+	op.wFunc = FO_COPY;
+   op.pFrom = pfc::stringcvt::string_wide_from_utf8( cmd_files );
+   op.pTo = pfc::stringcvt::string_wide_from_utf8( cmd_targetpath );
+	op.fFlags = FOF_NOCONFIRMMKDIR;
+   op.hwnd = core_api::get_main_window();
+
+   copy_result = SHFileOperation( &op );
+
+   if( copy_result ) {
+      popup_message::g_show( "Copy to device failed.", ANSYNC_NAME );
+   }
 
    /* pfc::string8 tmp1;
    static_api_ptr_t<playlist_manager>()->playlist_get_name( playlist_id_in, tmp1 );
