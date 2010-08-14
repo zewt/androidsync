@@ -406,60 +406,31 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
    pfc::string8 item_iter;
    t_size item_iter_id; // Index of the currently processing plist item.
    SHFILEOPSTRUCT op;
-   int i,
+   int i, // General purpose iterator.
       copy_result = 0,
-      src_len = 0, // Allowance for final (double) null char.
-      dst_len = cfg_targetpath.get_length() + 2;
-      //cpy_offset = 0;
+      src_len = 0,
+      dst_len = cfg_targetpath.get_length() + 2; // +2 for double NULL.
    TCHAR* t_src,
       * t_dst;
-      //* item_iter_wide;
-      //* cfg_targetpath_wide;
    pfc::string_formatter src8;
 
-   // Figure out how long the source string has to be.
+   // Build the source path list.
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
       playlist_id_in, playlist_items
    );
-   /*   for( 
-      item_iter_id = 0;
-      item_iter_id < playlist_items.get_count();
-      item_iter_id++
-   ) {
-      item_iter = playlist_items.get_item( item_iter_id ).get_ptr()->get_path();
-      src_len += item_iter.get_length() + 1; // Length of string plus null char.
-   } */
-      
-   // Allocate the source and destination strings.
-   //t_src = new TCHAR[src_len];
-   //memset( t_src, NULL, src_len * sizeof( TCHAR ) );
-   
-   // Build the source path list.
    for( 
       item_iter_id = 0;
       item_iter_id < playlist_items.get_count();
       item_iter_id++
    ) {
-      filesystem::g_get_display_path( playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), item_iter );
+      filesystem::g_get_display_path( 
+         playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
+         item_iter 
+      );
       
-      // Perform the copy.
-      //_tcsncpy( &t_src[cpy_offset], item_iter_wide, item_iter.get_length() );
-      /*pfc::stringcvt::convert_utf8_to_wide(
-         &t_src[cpy_offset], 
-         item_iter.get_length(),
-         item_iter,
-         item_iter.get_length()
-      );*/
-
-      //popup_message::g_show( item_iter, ANSYNC_NAME );
-
       src8 << item_iter;
       src8.add_char( '|' );
       src_len += item_iter.get_length() + 1; // +1 for the NULL.
-
-      // Set the offset to the next blank spot in the new string after the 
-      // terminating NULL. Make sure that second NULL is always intact, too.
-      //cpy_offset += item_iter.get_length() + 1; // +1 for the NULL.
    }
    
    // Copy over the target path.
@@ -468,7 +439,9 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
    memset( t_src, NULL, (src_len + 1) * sizeof( TCHAR ) );
    memset( t_dst, NULL, dst_len * sizeof( TCHAR ) );
    pfc::stringcvt::convert_utf8_to_wide( t_src, src_len, src8, src_len );
-   pfc::stringcvt::convert_utf8_to_wide( t_dst, dst_len - 1, cfg_targetpath, cfg_targetpath.length() );
+   pfc::stringcvt::convert_utf8_to_wide( 
+      t_dst, dst_len - 1, cfg_targetpath, cfg_targetpath.length() 
+   );
 
    // Convert the '|' deliminators to NULLs.
    for( i = 0 ; i < src_len ; i++ ) {
@@ -476,14 +449,6 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
          t_src[i] = _T( '\0' );
       }
    }
-   
-   //popup_message::g_show( src8, ANSYNC_NAME );
-   //popup_message::g_show( pfc::stringcvt::string_utf8_from_wide( t_src ), ANSYNC_NAME );
-
-   //popup_message::g_show( pfc::stringcvt::string_utf8_from_wide( t_dst ), ANSYNC_NAME );
-   //return;
-
-   // popup_message::g_show( pfc::string_formatter() << src_len << " " << cpy_offset, ANSYNC_NAME );
    
    // Build the file copy instruction structure.
    memset( &op, NULL, sizeof( op ) );
@@ -499,15 +464,8 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
       popup_message::g_show( "Copy to device failed.", ANSYNC_NAME );
    }
 
-   //popup_message::g_show( pfc::stringcvt::string_utf8_from_wide( t_src ), ANSYNC_NAME );
-
    delete t_src;
    delete t_dst;
-
-   /* pfc::string8 tmp1;
-   static_api_ptr_t<playlist_manager>()->playlist_get_name( playlist_id_in, tmp1 );
-   popup_message::g_show( tmp1, "Blah" );
-   popup_message::g_show( cmd_files, "Blah" ); */
 }
 
 void androidsync_do_sync() {
