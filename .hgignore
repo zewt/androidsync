@@ -1,0 +1,7 @@
+glob:Debug
+glob:Release
+glob:*.sdf
+glob:foo_androidsync.suo
+glob:ipch
+glob:RCa00840
+glob:foo_androidsync.opensdf
