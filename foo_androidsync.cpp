@@ -6,8 +6,19 @@
 
 const pfc::string8 ANSYNC_NAME = "Android Sync";
 
-void androidsync_do_sync_pl_items( t_size );
-void androidsync_do_sync_pl( t_size );
+void androidsync_basename( pfc::string8 &, pfc::string8 & );
+void androidsync_remote( pfc::string8 &, pfc::string8 & );
+void androidsync_do_sync_pl_items( 
+   t_size, pfc::list_t<pfc::string8> &, pfc::list_t<pfc::string8> &
+);
+void androidsync_do_sync_pl( 
+   t_size,
+   pfc::list_t<pfc::string8> &,
+   pfc::list_t<pfc::string8> &
+);
+void androidsync_do_sync_remove( 
+   pfc::list_t<pfc::string8> &, pfc::list_t<pfc::string8> &
+);
 void androidsync_do_sync();
 
 DECLARE_COMPONENT_VERSION(
@@ -15,7 +26,7 @@ DECLARE_COMPONENT_VERSION(
    "0.8.10",
    "Select the playlists you would like to synchronize from the \"Synchronize "
    "Playlists\" preference panel and then select \"Android Sync\" -> \""
-   "Synchronize Playlists\" to perform synchronization."
+   "Synchronize Playlists\" from the file menu to perform synchronization."
 );
 
 // This will prevent users from renaming your component around (important for 
@@ -435,7 +446,11 @@ void androidsync_remote( pfc::string8 &path_in, pfc::string8 &remote_out ) {
 
 // Copy all of the files on a given playlist to the target directory as 
 // specified in the configuration options.
-void androidsync_do_sync_pl_items( t_size playlist_id_in ) {
+void androidsync_do_sync_pl_items( 
+   t_size playlist_id_in, 
+   pfc::list_t<pfc::string8> &all_playlist_items,
+   pfc::list_t<pfc::string8> &copied_playlist_items
+) {
    pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
    pfc::string8 item_iter,
       item_iter_remote, // Remote path to post-copy item.
@@ -468,6 +483,9 @@ void androidsync_do_sync_pl_items( t_size playlist_id_in ) {
       androidsync_basename( item_iter, item_iter_basename );
       androidsync_remote( item_iter, item_iter_remote );
 
+      // Add this file to the list of all items.
+      all_playlist_items.add_item( item_iter_basename );
+
       // Only add the file to the list if it doesn't already exist at the 
       // destination.
       // TODO: Compare source and destination based on size or modification 
@@ -478,6 +496,9 @@ void androidsync_do_sync_pl_items( t_size playlist_id_in ) {
          src8 << item_iter;
          src8.add_char( '|' );
          src_len += item_iter.get_length() + 1; // +1 for the NULL.
+
+         // Make a note that we were able to copy this item.
+         copied_playlist_items.add_item( item_iter_basename );
       }
    }
    
@@ -519,7 +540,11 @@ void androidsync_do_sync_pl_items( t_size playlist_id_in ) {
 
 // Write the specified playlist to the target directory set in the configuration
 // options, modified to point to files in the same directory.
-void androidsync_do_sync_pl( t_size playlist_id_in ) {
+void androidsync_do_sync_pl( 
+   t_size playlist_id_in, 
+   pfc::list_t<pfc::string8> &all_playlist_items,
+   pfc::list_t<pfc::string8> &copied_playlist_items   
+) {
    pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
    pfc::string8 item_iter,
       playlist_name,
@@ -536,8 +561,21 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
    playlist_name << ".m3u";
    androidsync_remote( playlist_name, playlist_path_remote );
 
+   // The playlist is a copied file too!
+   all_playlist_items.add_item( playlist_name );
+   copied_playlist_items.add_item( playlist_name );
+
    // Open the file.
-   playlist = fopen( playlist_path_remote, "w" );
+   fopen_s( &playlist, playlist_path_remote, "w" );
+   if( NULL == playlist ) {
+      // Problem!
+      popup_message::g_show(
+         pfc::string8() << "Error opening playlist " << playlist_name << 
+            " for writing on device.",
+         ANSYNC_NAME
+      );
+      return;
+   }
    
    // Build the source path list.
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
@@ -570,11 +608,23 @@ void androidsync_do_sync_pl( t_size playlist_id_in ) {
    fclose( playlist );
 }
 
+// Check the files in the target directory and remove any that aren't playlists 
+// or music files.
+void androidsync_do_sync_remove( 
+   pfc::list_t<pfc::string8> &all_playlist_items,
+   pfc::list_t<pfc::string8> &removed_items 
+) {
+
+}
+
 void androidsync_do_sync() {
    t_size plist_id_iter, // Iterator for all playlist IDs.
        selected_id_iter; // Iterator for selected playlist IDs.
    pfc::string8 plist_iter,
       selected_iter;
+   pfc::list_t<pfc::string8> all_playlist_items,
+      copied_playlist_items,
+      removed_items;
 
    for( 
       plist_id_iter = 0;
@@ -594,10 +644,31 @@ void androidsync_do_sync() {
             0 == pfc::comparator_strcmp::compare( plist_iter, selected_iter )
          ) {
             // This playlist is on the list of selected playlists.
-            androidsync_do_sync_pl( plist_id_iter );
-            androidsync_do_sync_pl_items( plist_id_iter );
+            androidsync_do_sync_pl(
+               plist_id_iter,
+               all_playlist_items,
+               copied_playlist_items 
+            );
+            androidsync_do_sync_pl_items( 
+               plist_id_iter,
+               all_playlist_items,
+               copied_playlist_items
+            );
             break;
          }
       }
    }
+
+   // Remove files in the target directory which aren't music or playlist 
+   // files.
+   androidsync_do_sync_remove( all_playlist_items, removed_items );
+
+   // Report results.
+   popup_message::g_show(
+      pfc::string8() << all_playlist_items.get_count() << " items checked.\n" <<
+         copied_playlist_items.get_count() << " items written.\n" <<
+         (all_playlist_items.get_count() - copied_playlist_items.get_count()) << 
+         " items skipped.\n" << removed_items.get_count() << " items removed.", 
+      ANSYNC_NAME
+   );
 }
