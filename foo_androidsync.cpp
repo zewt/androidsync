@@ -1,10 +1,25 @@
+// This file is part of foo_androidsync.
+
+// foo_androidsync is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+
+// foo_androidsync is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+   
+// You should have received a copy of the GNU Lesser General Public License
+// along with foo_androidsync.  If not, see <http://www.gnu.org/licenses/>.
+
 #include "stdafx.h"
 #include "resource.h"
 #include <playlist.h>
 
 // = Declarations =
 
-const pfc::string8 ANSYNC_NAME = "Android Sync";
+const pfc::string8 APP_NAME = "Android Sync";
 
 void androidsync_basename( pfc::string8 &, pfc::string8 & );
 void androidsync_remote( pfc::string8 &, pfc::string8 & );
@@ -391,7 +406,7 @@ private:
 class preferences_page_androidsync : 
 public preferences_page_impl<CAndroidSyncPrefs> {
 public:
-   const char * get_name() { return ANSYNC_NAME; }
+   const char * get_name() { return APP_NAME; }
 
 	GUID get_guid() {
 		static const GUID guid = {
@@ -530,7 +545,7 @@ void androidsync_do_sync_pl_items(
    // Perform the actual copy.
    copy_result = SHFileOperation( &op );
    if( copy_result ) {
-      popup_message::g_show( "Copy to device failed.", ANSYNC_NAME );
+      popup_message::g_show( "Copy to device failed.", APP_NAME );
    }
 
    // Cleanup
@@ -572,7 +587,7 @@ void androidsync_do_sync_pl(
       popup_message::g_show(
          pfc::string8() << "Error opening playlist " << playlist_name << 
             " for writing on device.",
-         ANSYNC_NAME
+         APP_NAME
       );
       return;
    }
@@ -626,6 +641,19 @@ void androidsync_do_sync() {
       copied_playlist_items,
       removed_items;
 
+   // Make sure the target path is available. Quit if it's not.
+   if( 0xFFFFFFFF == GetFileAttributes( 
+      pfc::stringcvt::string_wide_from_utf8( cfg_targetpath )
+   ) ) {
+      popup_message::g_show(
+         pfc::string8() << "The target path specified, \"" << cfg_targetpath <<
+            "\", is not available. Please mount your Android device or fix " <<
+            "the path specified in the " << APP_NAME << " options.",
+         APP_NAME
+      );
+      return;
+   }
+
    for( 
       plist_id_iter = 0;
       plist_id_iter < static_api_ptr_t<playlist_manager>()->get_playlist_count();
@@ -669,6 +697,6 @@ void androidsync_do_sync() {
          copied_playlist_items.get_count() << " items written.\n" <<
          (all_playlist_items.get_count() - copied_playlist_items.get_count()) << 
          " items skipped.\n" << removed_items.get_count() << " items removed.", 
-      ANSYNC_NAME
+      APP_NAME
    );
 }
