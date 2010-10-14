@@ -629,7 +629,67 @@ void androidsync_do_sync_remove(
    pfc::list_t<pfc::string8> &all_playlist_items,
    pfc::list_t<pfc::string8> &removed_items 
 ) {
+   WIN32_FIND_DATA find_data;
+   HANDLE find_handle = INVALID_HANDLE_VALUE;
+   DWORD result_error = 0;
+   pfc::string8 search_target,
+      delete_file_path,
+      delete_file_name;
+   t_size playlist_idx_iter;
+   bool item_found;
 
+   // Clean up a string with the target path.
+   search_target << cfg_targetpath;
+   if( !search_target.ends_with( '\\' ) ) {
+      // FindFirstFile and co. don't like trailing backslashes.
+      search_target.add_chars( '\\', 1 );
+   }
+   search_target << "*.mp3";
+
+   // Find the first file in the directory.
+   find_handle = FindFirstFile( pfc::stringcvt::string_wide_from_utf8( search_target ), &find_data );
+   if( INVALID_HANDLE_VALUE == find_handle ) {
+      popup_message::g_show(
+         pfc::string8() << "There was a problem examining the directory for removal.",
+         APP_NAME
+      );
+   } 
+   
+   do {
+      // Check the file against the list of all copied files and delete it if 
+      // it's not present.
+      // TODO: Is there a more effective/quicker way of doing this? We're not 
+      //       very good with algorithms.
+      item_found = false;
+      for( 
+         playlist_idx_iter = 0;
+         playlist_idx_iter < all_playlist_items.get_count();
+         playlist_idx_iter++
+      ) {
+         if( 0 == strcmp( 
+            pfc::stringcvt::string_utf8_from_wide( find_data.cFileName ),
+            all_playlist_items.get_item( playlist_idx_iter ) 
+         ) ) {
+            // The item from the file system is present in the list, so move 
+            // on to the next step.
+            item_found = true;
+            break;
+         }
+      }
+
+      if( !item_found ) {
+         // The filename could not be found in the list of playlist files, so
+         // delete the file.
+         delete_file_name.reset();
+         delete_file_name <<
+            pfc::stringcvt::string_utf8_from_wide( find_data.cFileName );
+         androidsync_remote( delete_file_name, delete_file_path );
+         DeleteFile( pfc::stringcvt::string_wide_from_utf8( delete_file_path ) );
+         removed_items.add_item( pfc::stringcvt::string_utf8_from_wide( find_data.cFileName ) );
+      }     
+   } while( 0 != FindNextFile( find_handle, &find_data ) );
+
+   FindClose( find_handle );
 }
 
 void androidsync_do_sync() {
