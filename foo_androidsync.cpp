@@ -515,16 +515,16 @@ void androidsync_do_sync_pl_items(
       // destination.
       // TODO: Compare source and destination based on size or modification 
       //       times?
-      if( 0xFFFFFFFF == GetFileAttributes( 
-         pfc::stringcvt::string_wide_from_utf8( item_iter_remote )
-      ) ) {
-         src8 << item_iter;
-         src8.add_char( '|' );
-         src_len += item_iter.get_length() + 1; // +1 for the NULL.
+      pfc::stringcvt::string_wide_from_utf8 dst_path(item_iter_remote);
+      if(GetFileAttributes(dst_path) != 0xFFFFFFFF)
+         continue;
 
-         // Make a note that we were able to copy this item.
-         copied_playlist_items.add_item( item_iter_basename );
-      }
+      src8 << item_iter;
+      src8.add_char( '|' );
+      src_len += item_iter.get_length() + 1; // +1 for the NULL.
+
+      // Make a note that we were able to copy this item.
+      copied_playlist_items.add_item( item_iter_basename );
    }
    
    // Convert the source and destination paths into char arrays.
