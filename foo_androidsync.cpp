@@ -674,14 +674,6 @@ void androidsync_do_sync_remove(
 }
 
 void androidsync_do_sync() {
-   t_size plist_id_iter, // Iterator for all playlist IDs.
-       selected_id_iter; // Iterator for selected playlist IDs.
-   pfc::string8 plist_iter,
-      selected_iter;
-   pfc::list_t<pfc::string8> all_playlist_items,
-      copied_playlist_items,
-      removed_items;
-
    // Make sure the target path is available. Quit if it's not.
    if( GetFileAttributes(pfc::stringcvt::string_wide_from_utf8(cfg_targetpath)) == 0xFFFFFFFF )
    {
@@ -694,41 +686,27 @@ void androidsync_do_sync() {
       return;
    }
 
-   for( 
-      plist_id_iter = 0;
-      plist_id_iter < static_api_ptr_t<playlist_manager>()->get_playlist_count();
-      plist_id_iter++
-   ) {
-      for(
-         selected_id_iter = 0;
-         selected_id_iter < cfg_selectedplaylists.get_count();
-         selected_id_iter++
-      ) {
-         static_api_ptr_t<playlist_manager>()->playlist_get_name( 
-            plist_id_iter, plist_iter
-         );
-         selected_iter = cfg_selectedplaylists.get_item( selected_id_iter );
-         if( 
-            0 == pfc::comparator_strcmp::compare( plist_iter, selected_iter )
-         ) {
-            // This playlist is on the list of selected playlists.
-            androidsync_do_sync_pl(
-               plist_id_iter,
-               all_playlist_items,
-               copied_playlist_items 
-            );
-            androidsync_do_sync_pl_items( 
-               plist_id_iter,
-               all_playlist_items,
-               copied_playlist_items
-            );
-            break;
-         }
-      }
+   set<string> selected_playlists;
+   for(size_t i = 0; i < cfg_selectedplaylists.get_count(); ++i)
+      selected_playlists.insert((const char *) cfg_selectedplaylists.get_item(i));
+
+   pfc::list_t<pfc::string8> all_playlist_items;
+   pfc::list_t<pfc::string8> copied_playlist_items;
+
+   for(size_t i = 0; i < static_api_ptr_t<playlist_manager>()->get_playlist_count(); i++) {
+      pfc::string8 plist_iter;
+      static_api_ptr_t<playlist_manager>()->playlist_get_name(i, plist_iter);
+      if(selected_playlists.find((const char *) plist_iter) == selected_playlists.end())
+         continue;
+
+      // This playlist is on the list of selected playlists.
+      androidsync_do_sync_pl(i, all_playlist_items, copied_playlist_items);
+      androidsync_do_sync_pl_items(i, all_playlist_items, copied_playlist_items);
    }
 
    // Remove files in the target directory which aren't music or playlist 
    // files.
+   pfc::list_t<pfc::string8> removed_items;
    androidsync_do_sync_remove( all_playlist_items, removed_items );
 
    // Report results.
