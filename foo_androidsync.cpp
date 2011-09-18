@@ -522,10 +522,10 @@ void androidsync_do_sync_pl_items(
    // Build the file copy instruction structure.
    SHFILEOPSTRUCT op;
    memset( &op, NULL, sizeof( op ) );
-	op.wFunc = FO_COPY;
+   op.wFunc = FO_COPY;
    op.pFrom = src.c_str();
    op.pTo = dst.c_str();
-	op.fFlags = FOF_NOCONFIRMMKDIR|FOF_NORECURSION;
+   op.fFlags = FOF_NOCONFIRMMKDIR|FOF_NORECURSION;
    op.hwnd = core_api::get_main_window();
 
    // Perform the actual copy.
