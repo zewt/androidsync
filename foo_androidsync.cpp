@@ -477,8 +477,6 @@ void androidsync_do_sync_pl_items(
    pfc::list_t<pfc::string8> &all_playlist_items,
    pfc::list_t<pfc::string8> &copied_playlist_items
 ) {
-   pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
-   pfc::string8 item_iter;
    SHFILEOPSTRUCT op;
    int i, // General purpose iterator.
       copy_result = 0,
@@ -489,10 +487,11 @@ void androidsync_do_sync_pl_items(
    pfc::string_formatter src8;
 
    // Build the source path list.
-   static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
-      playlist_id_in, playlist_items
-   );
+   pfc::list_t<metadb_handle_ptr> playlist_items;
+   static_api_ptr_t<playlist_manager>()->playlist_get_all_items(playlist_id_in, playlist_items);
+
    for(t_size item_iter_id = 0; item_iter_id < playlist_items.get_count(); item_iter_id++) {
+      pfc::string8 item_iter;
       filesystem::g_get_display_path( 
          playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
          item_iter 
@@ -571,17 +570,12 @@ void androidsync_do_sync_pl(
    pfc::list_t<pfc::string8> &all_playlist_items,
    pfc::list_t<pfc::string8> &copied_playlist_items   
 ) {
-   pfc::string8
-      playlist_name,
-      playlist_path_remote,
-      item_iter_remote; // Remote path to post-copy item.
-   FILE* playlist;
-
    // Figure out the remote name to write the playlist to.
-   static_api_ptr_t<playlist_manager>()->playlist_get_name(
-      playlist_id_in, playlist_name
-   );
+   pfc::string8 playlist_name;
+   static_api_ptr_t<playlist_manager>()->playlist_get_name(playlist_id_in, playlist_name);
    playlist_name << ".m3u";
+
+   pfc::string8 playlist_path_remote;
    androidsync_remote( playlist_name, playlist_path_remote );
 
    // The playlist is a copied file too!
@@ -589,6 +583,7 @@ void androidsync_do_sync_pl(
    copied_playlist_items.add_item( playlist_name );
 
    // Open the file.
+   FILE* playlist;
    fopen_s( &playlist, playlist_path_remote, "w" );
    if( NULL == playlist ) {
       // Problem!
