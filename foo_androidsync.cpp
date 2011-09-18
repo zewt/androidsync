@@ -477,19 +477,11 @@ void androidsync_do_sync_pl_items(
    pfc::list_t<pfc::string8> &all_playlist_items,
    pfc::list_t<pfc::string8> &copied_playlist_items
 ) {
-   SHFILEOPSTRUCT op;
-   int i, // General purpose iterator.
-      copy_result = 0,
-      src_len = 0,
-      dst_len = cfg_targetpath.get_length() + 2; // +2 for double NULL.
-   TCHAR* t_src,
-      * t_dst;
-   pfc::string_formatter src8;
-
    // Build the source path list.
    pfc::list_t<metadb_handle_ptr> playlist_items;
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(playlist_id_in, playlist_items);
 
+   wstring src;
    for(t_size item_iter_id = 0; item_iter_id < playlist_items.get_count(); item_iter_id++) {
       pfc::string8 item_iter;
       filesystem::g_get_display_path( 
@@ -519,48 +511,32 @@ void androidsync_do_sync_pl_items(
       if(GetFileAttributes(dst_path) != 0xFFFFFFFF)
          continue;
 
-      src8 << item_iter;
-      src8.add_char( '|' );
-      src_len += item_iter.get_length() + 1; // +1 for the NULL.
+      src.append(src_path);
+      src.append(1, 0);
 
       // Make a note that we were able to copy this item.
       copied_playlist_items.add_item( item_iter_basename );
    }
-   
-   // Convert the source and destination paths into char arrays.
-   t_src = new TCHAR[src_len + 1]; // +1 for the second NULL.
-   t_dst = new TCHAR[dst_len];
-   memset( t_src, NULL, (src_len + 1) * sizeof( TCHAR ) );
-   memset( t_dst, NULL, dst_len * sizeof( TCHAR ) );
-   pfc::stringcvt::convert_utf8_to_wide( t_src, src_len, src8, src_len );
-   pfc::stringcvt::convert_utf8_to_wide(
-      t_dst, dst_len - 1, cfg_targetpath, cfg_targetpath.length()
-   );
 
-   // Convert the '|' deliminators to NULLs.
-   for( i = 0 ; i < src_len ; i++ ) {
-      if( _T( '|' ) == t_src[i] ) {
-         t_src[i] = _T( '\0' );
-      }
-   }
-   
+   wstring dst = pfc::stringcvt::string_wide_from_utf8(cfg_targetpath, cfg_targetpath.length());
+
    // Build the file copy instruction structure.
+   SHFILEOPSTRUCT op;
    memset( &op, NULL, sizeof( op ) );
 	op.wFunc = FO_COPY;
-   op.pFrom = t_src;
-   op.pTo = t_dst;
+   op.pFrom = src.c_str();
+   op.pTo = dst.c_str();
 	op.fFlags = FOF_NOCONFIRMMKDIR;
    op.hwnd = core_api::get_main_window();
 
    // Perform the actual copy.
-   copy_result = SHFileOperation( &op );
+   if(src.size() == 0)
+      return;
+
+   int copy_result = SHFileOperation( &op );
    if( copy_result ) {
       popup_message::g_show( "Copy to device failed.", APP_NAME );
    }
-
-   // Cleanup
-   delete t_src;
-   delete t_dst;
 }
 
 // Write the specified playlist to the target directory set in the configuration
