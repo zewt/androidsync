@@ -482,11 +482,9 @@ void androidsync_do_sync_pl_items(
 
    wstring src;
    for(t_size item_iter_id = 0; item_iter_id < playlist_items.get_count(); item_iter_id++) {
+      const metadb_handle *entry = playlist_items.get_item( item_iter_id ).get_ptr();
       pfc::string8 item_iter;
-      filesystem::g_get_display_path( 
-         playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
-         item_iter 
-      );
+      filesystem::g_get_display_path(entry->get_path(), item_iter);
 
       // Figure out the base name and remote name of the current item. 
       pfc::string8 item_iter_basename;
