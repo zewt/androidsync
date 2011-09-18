@@ -586,7 +586,7 @@ void androidsync_do_sync_pl(
       // Problem!
       popup_message::g_show(
          pfc::string8() << "Error opening playlist " << playlist_name << 
-            " for writing on device.",
+            " for writing on device: " << strerror(errno),
          APP_NAME
       );
       return;
