@@ -56,12 +56,13 @@ IDD_ANDROIDSYNCPREFS DIALOGEX 0, 0, 332, 288
 STYLE DS_SETFONT | WS_CHILD
 FONT 8, "Microsoft Sans Serif", 400, 0, 0x0
 BEGIN
-   LTEXT             "This page allows you to select the playlists you would like to keep synchronized with your Android device.", IDC_STATIC, 44, 50, 210, 30
-   LTEXT             "Selected Playlists:", IDC_STATIC, 35, 100, 59, 8
-   LISTBOX           IDC_SELECTEDPLAYLISTS, 35, 110, 210, 120, LBS_MULTIPLESEL
-   LTEXT             "Target Path:",IDC_STATIC, 35, 222, 59, 8
-   EDITTEXT          IDC_TARGETPATH, 35, 232, 210, 12, ES_AUTOHSCROLL
+    LTEXT           "This page allows you to select the playlists you would like to keep synchronized with your Android device.",IDC_STATIC,44,50,210,30
+    LTEXT           "Selected Playlists:",IDC_STATIC,35,100,59,8
+    LISTBOX         IDC_SELECTEDPLAYLISTS,35,110,210,120,LBS_MULTIPLESEL | WS_VSCROLL
+    LTEXT           "Target Path:",IDC_STATIC,35,222,59,8
+    EDITTEXT        IDC_TARGETPATH,35,232,210,12,ES_AUTOHSCROLL
 END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //

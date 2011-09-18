@@ -1,10 +1,10 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by foo_sample.rc
+// Used by foo_androidsync.rc
 //
-#define IDD_ANDROIDSYNCPREFS                    148
-#define IDC_SELECTEDPLAYLISTS                1001
-#define IDC_TARGETPATH                       1002
+#define IDD_ANDROIDSYNCPREFS            148
+#define IDC_SELECTEDPLAYLISTS           1001
+#define IDC_TARGETPATH                  1002
 
 // Next default values for new objects
 // 
