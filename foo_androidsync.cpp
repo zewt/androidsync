@@ -526,7 +526,7 @@ void androidsync_do_sync_pl_items(
 	op.wFunc = FO_COPY;
    op.pFrom = src.c_str();
    op.pTo = dst.c_str();
-	op.fFlags = FOF_NOCONFIRMMKDIR;
+	op.fFlags = FOF_NOCONFIRMMKDIR|FOF_NORECURSION;
    op.hwnd = core_api::get_main_window();
 
    // Perform the actual copy.
