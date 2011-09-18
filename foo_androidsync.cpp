@@ -633,6 +633,7 @@ void androidsync_do_sync_remove(
          pfc::string8() << "There was a problem examining the directory for removal.",
          APP_NAME
       );
+      return;
    } 
    
    do {
