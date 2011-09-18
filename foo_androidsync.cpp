@@ -479,7 +479,6 @@ void androidsync_do_sync_pl_items(
 ) {
    pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
    pfc::string8 item_iter;
-   t_size item_iter_id; // Index of the currently processing plist item.
    SHFILEOPSTRUCT op;
    int i, // General purpose iterator.
       copy_result = 0,
@@ -493,11 +492,7 @@ void androidsync_do_sync_pl_items(
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
       playlist_id_in, playlist_items
    );
-   for( 
-      item_iter_id = 0;
-      item_iter_id < playlist_items.get_count();
-      item_iter_id++
-   ) {
+   for(t_size item_iter_id = 0; item_iter_id < playlist_items.get_count(); item_iter_id++) {
       filesystem::g_get_display_path( 
          playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
          item_iter 
@@ -576,12 +571,10 @@ void androidsync_do_sync_pl(
    pfc::list_t<pfc::string8> &all_playlist_items,
    pfc::list_t<pfc::string8> &copied_playlist_items   
 ) {
-   pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
-   pfc::string8 item_iter,
+   pfc::string8
       playlist_name,
       playlist_path_remote,
       item_iter_remote; // Remote path to post-copy item.
-   t_size item_iter_id; // Index of the currently processing plist item.
    FILE* playlist;
 
    // Figure out the remote name to write the playlist to.
@@ -608,16 +601,13 @@ void androidsync_do_sync_pl(
    }
    
    // Build the source path list.
-   static_api_ptr_t<playlist_manager>()->playlist_get_all_items(
-      playlist_id_in, playlist_items
-   );
-   for( 
-      item_iter_id = 0;
-      item_iter_id < playlist_items.get_count();
-      item_iter_id++
-   ) {
+   pfc::list_t<metadb_handle_ptr> playlist_items;
+   static_api_ptr_t<playlist_manager>()->playlist_get_all_items(playlist_id_in, playlist_items);
+
+   for(t_size i = 0; i < playlist_items.get_count(); i++) {
+      pfc::string8 item_iter;
       filesystem::g_get_display_path( 
-         playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
+         playlist_items.get_item(i).get_ptr()->get_path(), 
          item_iter
       );
 
@@ -723,9 +713,8 @@ void androidsync_do_sync() {
       removed_items;
 
    // Make sure the target path is available. Quit if it's not.
-   if( 0xFFFFFFFF == GetFileAttributes( 
-      pfc::stringcvt::string_wide_from_utf8( cfg_targetpath )
-   ) ) {
+   if( GetFileAttributes(pfc::stringcvt::string_wide_from_utf8(cfg_targetpath)) == 0xFFFFFFFF )
+   {
       popup_message::g_show(
          pfc::string8() << "The target path specified, \"" << cfg_targetpath <<
             "\", is not available. Please mount your Android device or fix " <<
