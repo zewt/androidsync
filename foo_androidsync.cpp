@@ -467,9 +467,7 @@ void androidsync_do_sync_pl_items(
    pfc::list_t<pfc::string8> &copied_playlist_items
 ) {
    pfc::list_t<metadb_handle_ptr> playlist_items; // List of plist items.
-   pfc::string8 item_iter,
-      item_iter_remote, // Remote path to post-copy item.
-      item_iter_basename;
+   pfc::string8 item_iter;
    t_size item_iter_id; // Index of the currently processing plist item.
    SHFILEOPSTRUCT op;
    int i, // General purpose iterator.
@@ -495,7 +493,10 @@ void androidsync_do_sync_pl_items(
       );
 
       // Figure out the base name and remote name of the current item. 
+      pfc::string8 item_iter_basename;
       androidsync_basename( item_iter, item_iter_basename );
+
+      pfc::string8 item_iter_remote; // Remote path to post-copy item.
       androidsync_remote( item_iter, item_iter_remote );
 
       // Add this file to the list of all items.
@@ -564,8 +565,7 @@ void androidsync_do_sync_pl(
    pfc::string8 item_iter,
       playlist_name,
       playlist_path_remote,
-      item_iter_remote, // Remote path to post-copy item.
-      item_iter_basename;
+      item_iter_remote; // Remote path to post-copy item.
    t_size item_iter_id; // Index of the currently processing plist item.
    FILE* playlist;
 
@@ -607,6 +607,7 @@ void androidsync_do_sync_pl(
       );
 
       // Figure out the base name and remote name of the current item. 
+      pfc::string8 item_iter_basename;
       androidsync_basename( item_iter, item_iter_basename );
 
       // Write the line for the current item in the output playlist.
