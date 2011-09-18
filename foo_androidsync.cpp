@@ -459,6 +459,17 @@ void androidsync_remote( pfc::string8 &path_in, pfc::string8 &remote_out ) {
    remote_out << item_basename;
 }
 
+bool FileReadable(const wchar_t *path)
+{
+   DWORD result = GetFileAttributes(path);
+   if(result == 0xFFFFFFFF)
+      return false;
+   if(result & FILE_ATTRIBUTE_DIRECTORY)
+      return false;
+
+   return true;
+}
+
 // Copy all of the files on a given playlist to the target directory as 
 // specified in the configuration options.
 void androidsync_do_sync_pl_items( 
@@ -501,6 +512,10 @@ void androidsync_do_sync_pl_items(
 
       // Add this file to the list of all items.
       all_playlist_items.add_item( item_iter_basename );
+
+      pfc::stringcvt::string_wide_from_utf8 src_path(item_iter);
+      if(!FileReadable(src_path))
+         continue;
 
       // Only add the file to the list if it doesn't already exist at the 
       // destination.
@@ -605,6 +620,11 @@ void androidsync_do_sync_pl(
          playlist_items.get_item( item_iter_id ).get_ptr()->get_path(), 
          item_iter
       );
+
+      // Don't write the file to the playlist if it doesn't actually exist.
+      pfc::stringcvt::string_wide_from_utf8 src_path(item_iter);
+      if(!FileReadable(src_path))
+         continue;
 
       // Figure out the base name and remote name of the current item. 
       pfc::string8 item_iter_basename;
