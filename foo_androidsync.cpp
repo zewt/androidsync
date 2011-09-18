@@ -559,9 +559,8 @@ void androidsync_do_sync_pl(
    copied_playlist_items.add_item( playlist_name );
 
    // Open the file.
-   FILE* playlist;
-   fopen_s( &playlist, playlist_path_remote, "w" );
-   if( NULL == playlist ) {
+   FILE *playlist = _wfopen( pfc::stringcvt::string_wide_from_utf8(playlist_path_remote), L"w" );
+   if( playlist == NULL ) {
       // Problem!
       popup_message::g_show(
          pfc::string8() << "Error opening playlist " << playlist_name << 
