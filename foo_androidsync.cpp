@@ -469,6 +469,54 @@ bool FileReadable(const wchar_t *path)
    return true;
 }
 
+class WindowsFile
+{
+public:
+    WindowsFile(const wchar_t *filename)
+    {
+        handle = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    }
+
+    ~WindowsFile()
+    {
+        if(handle != INVALID_HANDLE_VALUE)
+            CloseHandle(handle);
+    }
+
+    HANDLE GetHandle() { return handle; }
+
+private:
+    HANDLE handle;
+};
+
+// Return true if both from and to exist, and have the same write time and
+// file size.
+bool FileExists(const wchar_t *from, const wchar_t *to)
+{
+   WindowsFile fromFile(from);
+   WindowsFile toFile(to);
+   if(fromFile.GetHandle() == INVALID_HANDLE_VALUE || toFile.GetHandle() == INVALID_HANDLE_VALUE)
+      return false;
+
+   LARGE_INTEGER fromSize = {0}, toSize = {0};
+   GetFileSizeEx(fromFile.GetHandle(), &fromSize);
+   GetFileSizeEx(toFile.GetHandle(), &toSize);
+   if(fromSize.QuadPart != toSize.QuadPart)
+      return false;
+
+   FILETIME fromTime, toTime;
+   GetFileTime(fromFile.GetHandle(), NULL, NULL, &fromTime);
+   GetFileTime(toFile.GetHandle(), NULL, NULL, &toTime);
+
+   if(fromTime.dwHighDateTime != toTime.dwHighDateTime)
+       return false;
+   if(fromTime.dwLowDateTime != toTime.dwLowDateTime)
+       return false;
+
+   return true;
+}
+
+
 // Copy all of the files on a given playlist to the target directory as 
 // specified in the configuration options.
 void androidsync_do_sync_pl_items( 
@@ -502,11 +550,9 @@ void androidsync_do_sync_pl_items(
 
       // Only add the file to the list if it doesn't already exist at the 
       // destination.
-      // TODO: Compare source and destination based on size or modification 
-      //       times?
       pfc::stringcvt::string_wide_from_utf8 dst_path(item_iter_remote);
-      if(GetFileAttributes(dst_path) != 0xFFFFFFFF)
-         continue;
+      if(FileExists(src_path, dst_path))
+          continue;
 
       src.append(src_path);
       src.append(1, 0);
@@ -523,7 +569,7 @@ void androidsync_do_sync_pl_items(
    op.wFunc = FO_COPY;
    op.pFrom = src.c_str();
    op.pTo = dst.c_str();
-   op.fFlags = FOF_NOCONFIRMMKDIR|FOF_NORECURSION;
+   op.fFlags = FOF_NOCONFIRMMKDIR|FOF_NORECURSION|FOF_NOCONFIRMATION;
    op.hwnd = core_api::get_main_window();
 
    // Perform the actual copy.
