@@ -16,23 +16,16 @@
 #include "stdafx.h"
 #include "resource.h"
 
+using namespace pfc::stringcvt;
+
 // = Declarations =
 
 const pfc::string8 APP_NAME = "Android Sync";
 
+typedef vector<string> filename_list;
+
 void androidsync_basename( pfc::string8 &, pfc::string8 & );
 void androidsync_remote( pfc::string8 &, pfc::string8 & );
-void androidsync_do_sync_pl_items( 
-   t_size, pfc::list_t<pfc::string8> &, pfc::list_t<pfc::string8> &
-);
-void androidsync_do_sync_pl( 
-   t_size,
-   pfc::list_t<pfc::string8> &,
-   pfc::list_t<pfc::string8> &
-);
-void androidsync_do_sync_remove( 
-   pfc::list_t<pfc::string8> &, pfc::list_t<pfc::string8> &
-);
 void androidsync_do_sync();
 
 DECLARE_COMPONENT_VERSION(
@@ -441,6 +434,27 @@ void androidsync_basename( pfc::string8 &path_in, pfc::string8 &basename_out ) {
       (item_basename_start ? item_basename_start + 1 : path_in);
 }
 
+string basename( string path_in )
+{
+   size_t end = path_in.find_last_not_of( "\\" );
+   if( end == path_in.npos )
+      return "";
+
+   size_t start = path_in.find_last_of( "\\", end );
+   if( start == path_in.npos )
+      start = 0;
+   else
+      ++start;
+
+    return path_in.substr( start, end-start+1 );
+}
+
+string androidsync_basename( pfc::string8 &path_in ) {
+   pfc::string8 path_out;
+   androidsync_basename(path_in, path_out);
+   return path_out.get_ptr();
+}
+
 // Figure out the destination/target path for the given item. 
 void androidsync_remote( pfc::string8 &path_in, pfc::string8 &remote_out ) {
    pfc::string8 item_basename;
@@ -458,9 +472,52 @@ void androidsync_remote( pfc::string8 &path_in, pfc::string8 &remote_out ) {
    remote_out << item_basename;
 }
 
-bool FileReadable(const wchar_t *path)
+string androidsync_remote( pfc::string8 &path_in ) {
+   pfc::string8 path_out;
+   androidsync_remote(path_in, path_out);
+   return path_out.get_ptr();
+}
+
+string androidsync_remote( string path_in ) {
+   string item_basename = basename( path_in );
+
+   // Remote name is the target path plus the base name.
+   string result(cfg_targetpath.get_ptr());
+   if( !cfg_targetpath.ends_with( '\\' ) ) {
+      // There's no trailing backslash, so add one.
+      result.append("\\");
+   }
+   result.append(item_basename);
+   return result;
+}
+
+static bool SimpleWaitForSingleObject( HANDLE h, DWORD ms )
 {
-   DWORD result = GetFileAttributes(path);
+   assert( h != NULL );
+
+   DWORD ret = WaitForSingleObject( h, ms );
+   switch( ret )
+   {
+   case WAIT_OBJECT_0:
+      return true;
+
+   case WAIT_TIMEOUT:
+      return false;
+
+   case WAIT_ABANDONED:
+      /* The docs aren't particular about what this does, but it should never happen. */
+      abort();
+
+   case WAIT_FAILED:
+      abort();
+   }
+
+   return false;
+}
+
+bool FileReadable(wstring path)
+{
+   DWORD result = GetFileAttributes(path.c_str());
    if(result == 0xFFFFFFFF)
       return false;
    if(result & FILE_ATTRIBUTE_DIRECTORY)
@@ -472,15 +529,22 @@ bool FileReadable(const wchar_t *path)
 class WindowsFile
 {
 public:
-    WindowsFile(const wchar_t *filename)
+    WindowsFile(HANDLE handle_)
     {
-        handle = CreateFileW(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+       handle = handle_;
     }
 
     ~WindowsFile()
     {
+       Close();
+    }
+
+    void Close()
+    {
         if(handle != INVALID_HANDLE_VALUE)
             CloseHandle(handle);
+        handle = INVALID_HANDLE_VALUE;
+
     }
 
     HANDLE GetHandle() { return handle; }
@@ -489,12 +553,55 @@ private:
     HANDLE handle;
 };
 
+string vssprintf(const char *szFormat, va_list va)
+{
+   string sStr;
+
+   char *pBuf = NULL;
+   int iChars = 1;
+   int iUsed = 0;
+   int iTry = 0;
+
+   do
+   {
+      iChars += iTry * 2048;
+      pBuf = (char*) _alloca(sizeof(char)*iChars);
+      iUsed = vsnprintf(pBuf, iChars-1, szFormat, va);
+      ++iTry;
+   } while(iUsed < 0);
+
+   // assign whatever we managed to format
+   sStr.assign(pBuf, iUsed);
+   return sStr;
+}
+
+string ssprintf(const char *fmt, ...)
+{
+   va_list va;
+   va_start(va, fmt);
+   return vssprintf(fmt, va);
+}
+
+string GetWindowsError(int iErr)
+{
+   char szBuf[1024] = "";
+   FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM, 0, iErr, 0, szBuf, sizeof(szBuf), NULL);
+
+   // For some reason, these messages are returned with a trailing \r\n.  Remove it.
+   if(*szBuf && szBuf[strlen(szBuf)-1] == '\n')
+      szBuf[strlen(szBuf)-1] = 0;
+   if(*szBuf && szBuf[strlen(szBuf)-1] == '\r')
+      szBuf[strlen(szBuf)-1] = 0;
+
+   return szBuf;
+}
+
 // Return true if both from and to exist, and have the same write time and
 // file size.
-bool FileExists(const wchar_t *from, const wchar_t *to)
+bool FileExists(wstring from, wstring to)
 {
-   WindowsFile fromFile(from);
-   WindowsFile toFile(to);
+   WindowsFile fromFile(CreateFileW(from.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL));
+   WindowsFile toFile(CreateFileW(to.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL));
    if(fromFile.GetHandle() == INVALID_HANDLE_VALUE || toFile.GetHandle() == INVALID_HANDLE_VALUE)
       return false;
 
@@ -516,148 +623,261 @@ bool FileExists(const wchar_t *from, const wchar_t *to)
    return true;
 }
 
+class Sync
+{
+public:
+   Sync()
+   {
+      cancelled = false;
+      total_files = 0;
+      files_finished = 0;
+   }
 
-// Copy all of the files on a given playlist to the target directory as 
-// specified in the configuration options.
-void androidsync_do_sync_pl_items( 
-   t_size playlist_id_in, 
-   pfc::list_t<pfc::string8> &all_playlist_items,
-   pfc::list_t<pfc::string8> &copied_playlist_items
-) {
+   // Return progress, on a scale of [0,1000].
+   int get_progress() const
+   {
+      int total_files = sourceToDest.size() + playlists.size();
+      if(total_files == 0)
+         return 0;
+
+      return (files_finished * 1000) / total_files;
+   }
+
+   void init_sync();
+   void perform_sync();
+
+   void cancel() { cancelled = true; }
+
+   string get_log() const { return log; }
+
+private:
+   void purge_files();
+   void write_playlists();
+   void copy_files();
+   void remove_files();
+
+   void make_item_list(t_size playlist_id_in);
+   void make_playlists(t_size playlist_id_in);
+
+   // Files and playlists to copy; initialized by init_sync:
+   map<wstring, wstring> sourceToDest;
+   map<string, filename_list> playlists;
+
+   vector<wstring> all_playlist_items;
+
+   int total_files;
+   int files_finished;
+
+   bool cancelled;
+   string log;
+};
+
+
+void Sync::make_item_list(t_size playlist_id_in)
+{
    // Build the source path list.
    pfc::list_t<metadb_handle_ptr> playlist_items;
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(playlist_id_in, playlist_items);
 
-   wstring src;
-   for(t_size item_iter_id = 0; item_iter_id < playlist_items.get_count(); item_iter_id++) {
+   for(t_size item_iter_id = 0; item_iter_id < playlist_items.get_count(); item_iter_id++)
+   {
       const metadb_handle *entry = playlist_items.get_item( item_iter_id ).get_ptr();
       pfc::string8 item_iter;
       filesystem::g_get_display_path(entry->get_path(), item_iter);
 
-      // Figure out the base name and remote name of the current item. 
-      pfc::string8 item_iter_basename;
-      androidsync_basename( item_iter, item_iter_basename );
+      wstring src_path = pfc::stringcvt::string_wide_from_utf8(item_iter);
+      wstring dst_path = pfc::stringcvt::string_wide_from_utf8(androidsync_remote(item_iter).c_str());
 
-      pfc::string8 item_iter_remote; // Remote path to post-copy item.
-      androidsync_remote( item_iter, item_iter_remote );
+      // Record the filename.  Don't access any files until we're in the thread, since it may take a while.
+      sourceToDest[src_path] = dst_path;
+   }
+}
 
-      // Add this file to the list of all items.
-      all_playlist_items.add_item( item_iter_basename );
+bool CopyFileInner(WindowsFile &fromFile, WindowsFile &toFile)
+{
+   char buf[1024*64];
+   DWORD got;
+   while(1)
+   {
+      if(!ReadFile(fromFile.GetHandle(), buf, sizeof(buf), &got, NULL))
+         return false;
 
-      pfc::stringcvt::string_wide_from_utf8 src_path(item_iter);
+      if(got == 0)
+         break;
+
+      DWORD wrote;
+      if(!WriteFile(toFile.GetHandle(), buf, got, &wrote, NULL))
+         return false;
+   }
+   return true;
+}
+
+bool CopyFile(wstring from, wstring to, string &error)
+{
+   WindowsFile fromFile(CreateFileW(from.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL));
+   if(fromFile.GetHandle() == INVALID_HANDLE_VALUE)
+   {
+      error = GetWindowsError(GetLastError());
+      return false;
+   }
+
+   WindowsFile toFile(CreateFileW(to.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 0, NULL));
+   if(toFile.GetHandle() == INVALID_HANDLE_VALUE)
+   {
+      error = GetWindowsError(GetLastError());
+      return false;
+   }
+
+   if(!CopyFileInner(fromFile, toFile))
+   {
+      // Stash the error, since the code below will clear it.
+      int errorNumber = GetLastError();
+
+      // If copying the file fails, delete the incomplete file.
+      toFile.Close();
+      DeleteFileW(to.c_str());
+
+      error = GetWindowsError(errorNumber);
+      return false;
+   }
+
+   // Copy file times to the new file.
+   FILETIME creation, access, write;
+   GetFileTime(fromFile.GetHandle(), &creation, &access, &write);
+   SetFileTime(toFile.GetHandle(), &creation, &access, &write);
+
+   return true;
+}
+
+// Remove files that won't be written, so the progress meter is accurate.
+// This is done from the thread, so it doesn't block the UI.
+void Sync::purge_files()
+{
+   map<wstring, wstring> newSourceToDest;
+   for(map<wstring, wstring>::const_iterator it = sourceToDest.begin();
+       it != sourceToDest.end(); ++it)
+   {
+      wstring src_path = it->first;
+      wstring dst_path = it->second;
+
       if(!FileReadable(src_path))
          continue;
 
       // Only add the file to the list if it doesn't already exist at the 
       // destination.
-      pfc::stringcvt::string_wide_from_utf8 dst_path(item_iter_remote);
       if(FileExists(src_path, dst_path))
           continue;
 
-      src.append(src_path);
-      src.append(1, 0);
-
-      // Make a note that we were able to copy this item.
-      copied_playlist_items.add_item( item_iter_basename );
+      newSourceToDest[src_path] = dst_path;
    }
 
-   wstring dst = pfc::stringcvt::string_wide_from_utf8(cfg_targetpath, cfg_targetpath.length());
+   sourceToDest = newSourceToDest;
 
-   // Build the file copy instruction structure.
-   SHFILEOPSTRUCT op;
-   memset( &op, NULL, sizeof( op ) );
-   op.wFunc = FO_COPY;
-   op.pFrom = src.c_str();
-   op.pTo = dst.c_str();
-   op.fFlags = FOF_NOCONFIRMMKDIR|FOF_NORECURSION|FOF_NOCONFIRMATION;
-   op.hwnd = core_api::get_main_window();
+   // This is stored separately, so we don't have to deal with carefully locking sourceToDest.
+   total_files = sourceToDest.size();
+}
 
-   // Perform the actual copy.
-   if(src.size() == 0)
-      return;
+// Copy all of the files on a given playlist to the target directory as 
+// specified in the configuration options.
+void Sync::copy_files()
+{
+   for(map<wstring, wstring>::const_iterator it = sourceToDest.begin();
+       it != sourceToDest.end(); ++it, ++files_finished)
+   {
+      if(cancelled)
+         return;
 
-   int copy_result = SHFileOperation( &op );
-   if( copy_result ) {
-      popup_message::g_show( "Copy to device failed.", APP_NAME );
+      wstring src_path = it->first;
+      wstring dst_path = it->second;
+
+      // Add this file to the list of all items.
+      all_playlist_items.push_back( src_path );
+
+      if(!FileReadable(src_path)) {
+         continue;
+      }
+
+      // Only add the file to the list if it doesn't already exist at the 
+      // destination.
+      if(FileExists(src_path, dst_path))
+          continue;
+
+      string error;
+      if(!CopyFile(src_path, dst_path, error))
+         log += ssprintf("Error copying file %s: %s\n", string_utf8_from_wide(src_path.c_str()).get_ptr(), error.c_str());
+   }
+}
+
+void Sync::write_playlists()
+{
+   for(map<string, filename_list>::const_iterator it = playlists.begin();
+       it != playlists.end(); ++it, ++files_finished)
+   {
+      if(cancelled)
+         return;
+
+      string playlist_name = it->first;
+      const vector<string> &filenames = it->second;
+
+      wstring playlist_path_remote = string_wide_from_utf8(androidsync_remote(playlist_name).c_str());
+
+      // The playlist is a copied file too!
+      all_playlist_items.push_back( playlist_path_remote );
+
+      // Open the file.
+      FILE *playlist = _wfopen(playlist_path_remote.c_str(), L"w" );
+      if( playlist == NULL ) {
+         log += ssprintf("Error writing playlist %s: %s\n", playlist_name.c_str(), strerror(errno));
+         return;
+      }
+      
+      for(size_t i = 0; i < filenames.size(); i++)
+      {
+         string src_file = filenames[i];
+
+         // Don't write the file to the playlist if it doesn't actually exist.
+         if(!FileReadable(pfc::stringcvt::string_wide_from_utf8(src_file.c_str()).get_ptr()))
+            continue;
+
+         // Write the line for the current item in the output playlist.
+         fprintf(playlist, "%s\n", basename(src_file).c_str());
+      }
+
+      // Cleanup.
+      fclose( playlist );
    }
 }
 
 // Write the specified playlist to the target directory set in the configuration
 // options, modified to point to files in the same directory.
-void androidsync_do_sync_pl( 
-   t_size playlist_id_in, 
-   pfc::list_t<pfc::string8> &all_playlist_items,
-   pfc::list_t<pfc::string8> &copied_playlist_items   
-) {
+void Sync::make_playlists(t_size playlist_id_in)
+{
    // Figure out the remote name to write the playlist to.
    pfc::string8 playlist_name;
    static_api_ptr_t<playlist_manager>()->playlist_get_name(playlist_id_in, playlist_name);
    playlist_name << ".m3u";
 
-   pfc::string8 playlist_path_remote;
-   androidsync_remote( playlist_name, playlist_path_remote );
+   vector<string> &filenames = playlists[playlist_name.get_ptr()];
 
-   // The playlist is a copied file too!
-   all_playlist_items.add_item( playlist_name );
-   copied_playlist_items.add_item( playlist_name );
-
-   // Open the file.
-   FILE *playlist = _wfopen( pfc::stringcvt::string_wide_from_utf8(playlist_path_remote), L"w" );
-   if( playlist == NULL ) {
-      // Problem!
-      popup_message::g_show(
-         pfc::string8() << "Error opening playlist " << playlist_name << 
-            " for writing on device: " << strerror(errno),
-         APP_NAME
-      );
-      return;
-   }
-   
    // Build the source path list.
    pfc::list_t<metadb_handle_ptr> playlist_items;
    static_api_ptr_t<playlist_manager>()->playlist_get_all_items(playlist_id_in, playlist_items);
 
    for(t_size i = 0; i < playlist_items.get_count(); i++) {
-      pfc::string8 item_iter;
-      filesystem::g_get_display_path( 
-         playlist_items.get_item(i).get_ptr()->get_path(), 
-         item_iter
-      );
-
-      // Don't write the file to the playlist if it doesn't actually exist.
-      pfc::stringcvt::string_wide_from_utf8 src_path(item_iter);
-      if(!FileReadable(src_path))
-         continue;
-
-      // Figure out the base name and remote name of the current item. 
-      pfc::string8 item_iter_basename;
-      androidsync_basename( item_iter, item_iter_basename );
-
-      // Write the line for the current item in the output playlist.
-      fwrite(
-         item_iter_basename,
-         sizeof( char ),
-         item_iter_basename.get_length(),
-         playlist
-      );
-      fwrite( "\n", sizeof( char ), 1, playlist );
+      pfc::string8 src_file;
+      filesystem::g_get_display_path(playlist_items.get_item(i).get_ptr()->get_path(), src_file);
+      filenames.push_back(src_file.get_ptr());
    }
-
-   // Cleanup.
-   fclose( playlist );
 }
 
 // Check the files in the target directory and remove any that aren't playlists 
 // or music files.
-void androidsync_do_sync_remove( 
-   pfc::list_t<pfc::string8> &all_playlist_items,
-   pfc::list_t<pfc::string8> &removed_items 
-) {
+void Sync::remove_files()
+{
    WIN32_FIND_DATA find_data;
    HANDLE find_handle = INVALID_HANDLE_VALUE;
    DWORD result_error = 0;
    pfc::string8 search_target,
-      delete_file_path,
       delete_file_name;
    t_size playlist_idx_iter;
    bool item_found;
@@ -688,13 +908,10 @@ void androidsync_do_sync_remove(
       item_found = false;
       for( 
          playlist_idx_iter = 0;
-         playlist_idx_iter < all_playlist_items.get_count();
+         playlist_idx_iter < all_playlist_items.size();
          playlist_idx_iter++
       ) {
-         if( 0 == strcmp( 
-            pfc::stringcvt::string_utf8_from_wide( find_data.cFileName ),
-            all_playlist_items.get_item( playlist_idx_iter ) 
-         ) ) {
+         if( !wcscmp(find_data.cFileName, all_playlist_items[playlist_idx_iter].c_str()) ) {
             // The item from the file system is present in the list, so move 
             // on to the next step.
             item_found = true;
@@ -708,16 +925,170 @@ void androidsync_do_sync_remove(
          delete_file_name.reset();
          delete_file_name <<
             pfc::stringcvt::string_utf8_from_wide( find_data.cFileName );
+
+         pfc::string8 delete_file_path;
          androidsync_remote( delete_file_name, delete_file_path );
          DeleteFile( pfc::stringcvt::string_wide_from_utf8( delete_file_path ) );
-         removed_items.add_item( pfc::stringcvt::string_utf8_from_wide( find_data.cFileName ) );
       }     
    } while( 0 != FindNextFile( find_handle, &find_data ) );
 
    FindClose( find_handle );
 }
 
+void Sync::init_sync()
+{
+   set<string> selected_playlists;
+   for(size_t i = 0; i < cfg_selectedplaylists.get_count(); ++i)
+   {
+      selected_playlists.insert((const char *) cfg_selectedplaylists.get_item(i));
+   }
+
+   for(size_t i = 0; i < static_api_ptr_t<playlist_manager>()->get_playlist_count(); i++) {
+      pfc::string8 plist_iter;
+      static_api_ptr_t<playlist_manager>()->playlist_get_name(i, plist_iter);
+      if(selected_playlists.find((const char *) plist_iter) == selected_playlists.end())
+         continue;
+
+      // This playlist is on the list of selected playlists.
+      make_playlists(i);
+      make_item_list(i);
+   }
+}
+
+void Sync::perform_sync()
+{
+   purge_files();
+
+   // Write playlists first, so if the user cancels partway through his playlists are
+   // available for the files that finished.
+   write_playlists();
+   copy_files();
+
+   // Remove files in the target directory which aren't music or playlist 
+   // files.
+   // remove_files();
+
+   // Don't log this.  It's annoying to pop open the notification box telling the user what he
+   // just did.
+   // if(cancelled)
+   //    log += "Synchronization was aborted by the user.\n";
+}
+
+class ThreadedSync
+{
+public:
+   ThreadedSync(Sync &sync_):
+      sync(sync_)
+   {
+      finished = false;
+      thread = INVALID_HANDLE_VALUE;
+   }
+
+   const Sync &getSync() { return sync; }
+   void begin()
+   {
+      DWORD threadId;
+      thread = CreateThread(NULL, 0, sync_thread, this, 0, &threadId);
+      assert(thread != INVALID_HANDLE_VALUE);
+   }
+
+   void wait()
+   {
+      SimpleWaitForSingleObject(thread, INFINITE);
+      CloseHandle(thread);
+   }
+
+   void cancel()
+   {
+      sync.cancel();
+   }
+
+   bool get_finished() const { return finished; }
+
+private:
+   static DWORD WINAPI sync_thread( LPVOID pData )
+   {
+      ((ThreadedSync *) pData)->thread_main();
+      return 0;
+   }
+
+   void thread_main()
+   {
+      try {
+         sync.perform_sync();
+      } catch(...) {
+         finished = true;
+         throw;
+      }
+      finished = true;
+   }
+
+   Sync &sync;
+   bool finished;
+
+   HANDLE thread;
+};
+
+static ThreadedSync *threadedSync = NULL;
+BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+   switch( msg )
+   {
+   case WM_INITDIALOG:
+   {
+       SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETRANGE, 0, MAKELPARAM(0, 1000));
+       SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETPOS, 0, 0);
+
+       SetTimer(hWnd, 1, 50, NULL);
+       threadedSync->begin();
+       ShowWindow(hWnd, SW_SHOW); 
+       return TRUE;
+   }
+
+   case WM_COMMAND:
+   {
+      int item = LOWORD (wParam);
+      int cmd = HIWORD (wParam);
+      if(cmd == BN_CLICKED)
+      {
+         if(item == IDCANCEL)
+            threadedSync->cancel();
+      }
+      return TRUE;
+   }
+
+   case WM_TIMER:
+   {
+      int progress = threadedSync->getSync().get_progress();
+      // Windows 7 progress meters interpolate changes.  This is completely broken: progress
+      // meters never actually reach a full state, because it's still animating the previous
+      // change when the window closes.  Work around this; this has the effect of disabling
+      // progress animations entirely.
+      SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETPOS, progress, 0);
+      SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETPOS, progress-1, 0);
+      SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETPOS, progress, 0);
+
+      if(threadedSync->get_finished())
+      {
+         // Wait for the sync thread to exit.
+         threadedSync->wait();
+
+         // Close the dialog.
+         EndDialog(hWnd, 1);
+         return TRUE;
+      }
+
+      return TRUE;
+   }
+   }
+   return FALSE;
+}
+
 void androidsync_do_sync() {
+//   AllocConsole();
+//   freopen( "CONOUT$","wb", stdout );
+//   freopen( "CONOUT$","wb", stderr );
+
    // Make sure the target path is available. Quit if it's not.
    if( GetFileAttributes(pfc::stringcvt::string_wide_from_utf8(cfg_targetpath)) == 0xFFFFFFFF )
    {
@@ -730,35 +1101,21 @@ void androidsync_do_sync() {
       return;
    }
 
-   set<string> selected_playlists;
-   for(size_t i = 0; i < cfg_selectedplaylists.get_count(); ++i)
-      selected_playlists.insert((const char *) cfg_selectedplaylists.get_item(i));
+   // Set up the list of files and playlists that we'll copy.  This needs to be done in the main
+   // thread.
+   Sync sync;
+   sync.init_sync();
 
-   pfc::list_t<pfc::string8> all_playlist_items;
-   pfc::list_t<pfc::string8> copied_playlist_items;
+   // Set up the helper that'll run the actual sync in a thread.
+   threadedSync = new ThreadedSync(sync);
 
-   for(size_t i = 0; i < static_api_ptr_t<playlist_manager>()->get_playlist_count(); i++) {
-      pfc::string8 plist_iter;
-      static_api_ptr_t<playlist_manager>()->playlist_get_name(i, plist_iter);
-      if(selected_playlists.find((const char *) plist_iter) == selected_playlists.end())
-         continue;
-
-      // This playlist is on the list of selected playlists.
-      androidsync_do_sync_pl(i, all_playlist_items, copied_playlist_items);
-      androidsync_do_sync_pl_items(i, all_playlist_items, copied_playlist_items);
-   }
-
-   // Remove files in the target directory which aren't music or playlist 
-   // files.
-   pfc::list_t<pfc::string8> removed_items;
-   androidsync_do_sync_remove( all_playlist_items, removed_items );
+   // Set up the dialog.  When this returns, the sync finished or was cancelled.
+   DialogBox(core_api::get_my_instance(), MAKEINTRESOURCE(IDD_SYNC), core_api::get_main_window(), WndProc);
 
    // Report results.
-   popup_message::g_show(
-      pfc::string8() << all_playlist_items.get_count() << " items checked.\n" <<
-         copied_playlist_items.get_count() << " items written.\n" <<
-         (all_playlist_items.get_count() - copied_playlist_items.get_count()) << 
-         " items skipped.\n" << removed_items.get_count() << " items removed.", 
-      APP_NAME
-   );
+   string log = sync.get_log();
+   if(!log.empty())
+      popup_message::g_show(log.c_str(), APP_NAME);
+
+   delete threadedSync;
 }

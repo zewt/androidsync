@@ -63,6 +63,16 @@ BEGIN
     EDITTEXT        IDC_TARGETPATH,35,232,210,12,ES_AUTOHSCROLL
 END
 
+IDD_SYNC DIALOGEX 0, 0, 236, 51
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Synchronizing"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Cancel",IDCANCEL,170,34,49,14
+    CONTROL         "",IDC_PROGRESS1,"msctls_progress32",WS_BORDER,18,16,201,15
+    LTEXT           "Copying files...",IDC_STATIC,20,4,57,11
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -78,6 +88,14 @@ BEGIN
         RIGHTMARGIN, 325
         TOPMARGIN, 7
         BOTTOMMARGIN, 281
+    END
+
+    IDD_SYNC, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 229
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 44
     END
 END
 #endif    // APSTUDIO_INVOKED
