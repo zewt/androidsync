@@ -1041,6 +1041,8 @@ BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
    {
    case WM_INITDIALOG:
    {
+       modeless_dialog_manager::g_add(hWnd);
+
        SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETRANGE, 0, MAKELPARAM(0, 1000));
        SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETPOS, 0, 0);
 
@@ -1089,6 +1091,8 @@ BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
    case WM_DESTROY:
       delete threadedSync;
       threadedSync = NULL;
+
+      modeless_dialog_manager::g_remove(hWnd);
 
       return TRUE;
    }
