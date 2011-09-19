@@ -668,7 +668,7 @@ private:
    int total_files;
    int files_finished;
 
-   bool cancelled;
+   volatile bool cancelled;
    string log;
 };
 
@@ -693,11 +693,11 @@ void Sync::make_item_list(t_size playlist_id_in)
    }
 }
 
-bool CopyFileInner(WindowsFile &fromFile, WindowsFile &toFile)
+bool CopyFileInner(WindowsFile &fromFile, WindowsFile &toFile, volatile bool *cancelled)
 {
    char buf[1024*64];
    DWORD got;
-   while(1)
+   while(!*cancelled)
    {
       if(!ReadFile(fromFile.GetHandle(), buf, sizeof(buf), &got, NULL))
          return false;
@@ -712,7 +712,7 @@ bool CopyFileInner(WindowsFile &fromFile, WindowsFile &toFile)
    return true;
 }
 
-bool CopyFile(wstring from, wstring to, string &error)
+bool CopyFile(wstring from, wstring to, string &error, volatile bool *cancelled)
 {
    WindowsFile fromFile(CreateFileW(from.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL));
    if(fromFile.GetHandle() == INVALID_HANDLE_VALUE)
@@ -728,7 +728,7 @@ bool CopyFile(wstring from, wstring to, string &error)
       return false;
    }
 
-   if(!CopyFileInner(fromFile, toFile))
+   if(!CopyFileInner(fromFile, toFile, cancelled))
    {
       // Stash the error, since the code below will clear it.
       int errorNumber = GetLastError();
@@ -803,8 +803,16 @@ void Sync::copy_files()
           continue;
 
       string error;
-      if(!CopyFile(src_path, dst_path, error))
+      if(!CopyFile(src_path, dst_path, error, &cancelled))
          log += ssprintf("Error copying file %s: %s\n", string_utf8_from_wide(src_path.c_str()).get_ptr(), error.c_str());
+
+      // If the operation was cancelled, CopyFile may leave an incomplete file behind;
+      // delete it.
+      if(cancelled)
+      {
+         // log += ssprintf("Deleting %s (aborted by user)", string_utf8_from_wide(dst_path.c_str()).get_ptr());
+         DeleteFileW(dst_path.c_str());
+      }
    }
 }
 
