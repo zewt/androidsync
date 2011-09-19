@@ -972,16 +972,21 @@ void Sync::perform_sync()
    // just did.
    // if(cancelled)
    //    log += "Synchronization was aborted by the user.\n";
+
+   // Report results.
+   if(!log.empty())
+      popup_message::g_show(log.c_str(), APP_NAME);
 }
 
 class ThreadedSync
 {
 public:
-   ThreadedSync(Sync &sync_):
-      sync(sync_)
+   ThreadedSync()
    {
       finished = false;
       thread = INVALID_HANDLE_VALUE;
+
+      sync.init_sync();
    }
 
    const Sync &getSync() { return sync; }
@@ -1023,7 +1028,7 @@ private:
       finished = true;
    }
 
-   Sync &sync;
+   Sync sync;
    bool finished;
 
    HANDLE thread;
@@ -1074,17 +1079,27 @@ BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
          threadedSync->wait();
 
          // Close the dialog.
-         EndDialog(hWnd, 1);
+         DestroyWindow(hWnd);
          return TRUE;
       }
 
       return TRUE;
    }
+
+   case WM_DESTROY:
+      delete threadedSync;
+      threadedSync = NULL;
+
+      return TRUE;
    }
    return FALSE;
 }
 
 void androidsync_do_sync() {
+   // Stop if we're already running.
+   if(threadedSync != NULL)
+      return;
+
 //   AllocConsole();
 //   freopen( "CONOUT$","wb", stdout );
 //   freopen( "CONOUT$","wb", stderr );
@@ -1101,21 +1116,9 @@ void androidsync_do_sync() {
       return;
    }
 
-   // Set up the list of files and playlists that we'll copy.  This needs to be done in the main
-   // thread.
-   Sync sync;
-   sync.init_sync();
-
    // Set up the helper that'll run the actual sync in a thread.
-   threadedSync = new ThreadedSync(sync);
+   threadedSync = new ThreadedSync;
 
    // Set up the dialog.  When this returns, the sync finished or was cancelled.
-   DialogBox(core_api::get_my_instance(), MAKEINTRESOURCE(IDD_SYNC), core_api::get_main_window(), WndProc);
-
-   // Report results.
-   string log = sync.get_log();
-   if(!log.empty())
-      popup_message::g_show(log.c_str(), APP_NAME);
-
-   delete threadedSync;
+   CreateDialog(core_api::get_my_instance(), MAKEINTRESOURCE(IDD_SYNC), core_api::get_main_window(), WndProc);
 }
