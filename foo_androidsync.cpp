@@ -596,6 +596,19 @@ string GetWindowsError(int iErr)
    return szBuf;
 }
 
+LARGE_INTEGER FileTimeToLargeInt(FILETIME time)
+{
+   LARGE_INTEGER ret;
+   ret.LowPart = time.dwLowDateTime;
+   ret.HighPart = time.dwHighDateTime;
+   return ret;
+}
+
+inline long long llabs(long long i)
+{
+   return i >= 0? i: -i;
+}
+
 // Return true if both from and to exist, and have the same write time and
 // file size.
 bool FileExists(wstring from, wstring to)
@@ -615,9 +628,11 @@ bool FileExists(wstring from, wstring to)
    GetFileTime(fromFile.GetHandle(), NULL, NULL, &fromTime);
    GetFileTime(toFile.GetHandle(), NULL, NULL, &toTime);
 
-   if(fromTime.dwHighDateTime != toTime.dwHighDateTime)
-       return false;
-   if(fromTime.dwLowDateTime != toTime.dwLowDateTime)
+   // FAT32 modification times have a resolution of two seconds, so we need to allow some
+   // variation in the timestamps.
+   LARGE_INTEGER fromTimeInt = FileTimeToLargeInt(fromTime);
+   LARGE_INTEGER toTimeInt = FileTimeToLargeInt(toTime);
+   if(llabs(fromTimeInt.QuadPart - toTimeInt.QuadPart) > 50000000) // 5 seconds
        return false;
 
    return true;
