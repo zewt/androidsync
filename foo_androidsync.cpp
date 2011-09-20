@@ -604,6 +604,16 @@ LARGE_INTEGER FileTimeToLargeInt(FILETIME time)
    return ret;
 }
 
+wstring stdstr_wide_from_utf8(string s)
+{
+   return string_wide_from_utf8(s.data(), s.size()).get_ptr();
+}
+
+string stdstr_utf8_from_wide(wstring s)
+{
+   return string_utf8_from_wide(s.data(), s.size()).get_ptr();
+}
+
 inline long long llabs(long long i)
 {
    return i >= 0? i: -i;
@@ -645,6 +655,7 @@ public:
    {
       cancelled = false;
       files_finished = 0;
+      current_activity = "Scanning...";
    }
 
    // Return progress, on a scale of [0,1000].
@@ -657,6 +668,12 @@ public:
          return 0;
 
       return (files_finished * 1000) / total_files;
+   }
+
+   string get_activity() const
+   {
+      insync(&lock);
+      return current_activity;
    }
 
    void init_sync();
@@ -685,6 +702,9 @@ private:
 
    volatile bool cancelled;
    string log;
+
+   // This is updated while perform_sync is running.
+   string current_activity;
    mutable critical_section lock;
 };
 
@@ -817,6 +837,8 @@ void Sync::copy_files()
       if(FileExists(src_path, dst_path))
           continue;
 
+      current_activity = basename(stdstr_utf8_from_wide(dst_path));
+
       string error;
       if(!CopyFile(src_path, dst_path, error, &cancelled))
          log += ssprintf("Error copying file %s: %s\n", string_utf8_from_wide(src_path.c_str()).get_ptr(), error.c_str());
@@ -843,6 +865,7 @@ void Sync::write_playlists()
       const vector<string> &filenames = it->second;
 
       wstring playlist_path_remote = string_wide_from_utf8(androidsync_remote(playlist_name).c_str());
+      current_activity = playlist_name;
 
       // The playlist is a copied file too!
       all_playlist_items.push_back( playlist_path_remote );
@@ -1058,6 +1081,13 @@ private:
 };
 
 static ThreadedSync *threadedSync = NULL;
+void update_display(HWND hWnd)
+{
+   string activity = threadedSync->getSync().get_activity();
+   HWND item_hwnd = GetDlgItem( hWnd, IDC_STATUS );
+   SetWindowText( item_hwnd, stdstr_wide_from_utf8(activity).c_str() );
+}
+
 BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
    switch( msg )
@@ -1070,6 +1100,7 @@ BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
        SendMessage(GetDlgItem(hWnd, IDC_PROGRESS1), PBM_SETPOS, 0, 0);
 
        SetTimer(hWnd, 1, 50, NULL);
+       update_display(hWnd);
        threadedSync->begin();
        ShowWindow(hWnd, SW_SHOW); 
        return TRUE;
@@ -1089,6 +1120,8 @@ BOOL CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
    case WM_TIMER:
    {
+      update_display(hWnd);
+
       int progress = threadedSync->getSync().get_progress();
       // Windows 7 progress meters interpolate changes.  This is completely broken: progress
       // meters never actually reach a full state, because it's still animating the previous
