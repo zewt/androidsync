@@ -644,13 +644,14 @@ public:
    Sync()
    {
       cancelled = false;
-      total_files = 0;
       files_finished = 0;
    }
 
    // Return progress, on a scale of [0,1000].
    int get_progress() const
    {
+      insync(&lock);
+
       int total_files = sourceToDest.size() + playlists.size();
       if(total_files == 0)
          return 0;
@@ -680,11 +681,11 @@ private:
 
    vector<wstring> all_playlist_items;
 
-   int total_files;
    int files_finished;
 
    volatile bool cancelled;
    string log;
+   mutable critical_section lock;
 };
 
 
@@ -786,10 +787,9 @@ void Sync::purge_files()
       newSourceToDest[src_path] = dst_path;
    }
 
+   lock.enter();
    sourceToDest = newSourceToDest;
-
-   // This is stored separately, so we don't have to deal with carefully locking sourceToDest.
-   total_files = sourceToDest.size();
+   lock.leave();
 }
 
 // Copy all of the files on a given playlist to the target directory as 
